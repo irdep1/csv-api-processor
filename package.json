@@ -1,0 +1,22 @@
+{
+  "name": "csv-api-processor",
+  "version": "1.0.0",
+  "description": "Process CSV data and send to API endpoint using a template",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "csv",
+    "api",
+    "processor"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "csv-parser": "^3.0.0",
+    "yargs": "^17.7.2"
+  }
+}
