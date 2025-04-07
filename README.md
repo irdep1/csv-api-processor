@@ -22,7 +22,7 @@ npm install
 Run the script with the following command-line arguments:
 
 ```bash
-node index.js --csv <path-to-csv> --config <path-to-config> --apikey <your-api-key> [--endpoint <api-endpoint>] [--delay <ms>] [--interactive]
+node index.js --csv <path-to-csv> --config <path-to-config> --apikey <your-api-key> [--endpoint <api-endpoint>] [--delay <ms>] [--interactive] [--generate-config] [--output-config <path>]
 ```
 
 ### Required Arguments
@@ -43,7 +43,14 @@ node index.js --csv <path-to-csv> --config <path-to-config> --apikey <your-api-k
 ### Example
 
 ```bash
+# Basic usage
 node index.js --csv source/sample-data.csv --config mapping/sample-multi-request-config.json --apikey YOUR_API_KEY --delay 500
+
+# Generate config from CSV
+node index.js --csv source/sample-data.csv --generate-config --output-config mapping/custom-config.json
+
+# Interactive mode
+node index.js --csv source/sample-data.csv --config mapping/config.json --apikey YOUR_API_KEY --interactive
 ```
 
 ## Configuration File
