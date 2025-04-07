@@ -1,0 +1,39 @@
+{
+  "payloadTemplate": {
+    "customer": {
+      "id": "$customerId",
+      "name": "$customerName",
+      "email": "$email",
+      "isVIP": "$isVIP",
+      "memberSince": "$memberSince"
+    },
+    "order": {
+      "products": [
+        {
+          "id": "$productId",
+          "quantity": "$quantity",
+          "price": "$price",
+          "inStock": "$inStock"
+        }
+      ],
+      "totalAmount": "$totalAmount",
+      "currency": "USD",
+      "orderDate": "$orderDate",
+      "priority": "$priority",
+      "notes": "$notes"
+    },
+    "shipping": {
+      "address": "$address",
+      "city": "$city",
+      "zipCode": "$zipCode",
+      "country": "$country",
+      "expedited": "$expedited",
+      "contactPhone": "$contactPhone"
+    },
+    "metadata": {
+      "source": "CSV Import",
+      "processedAt": "$processedAt",
+      "recordNumber": "$recordNumber"
+    }
+  }
+}

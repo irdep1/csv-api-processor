@@ -1,0 +1,17 @@
+{
+  "endpoint": "https://api.example.com/v1/orders/$orderId/shipping",
+  "method": "PUT",
+  "payloadTemplate": {
+    "shippingAddress": {
+      "address": "$address",
+      "city": "$city",
+      "zipCode": "$zipCode",
+      "country": "$country"
+    },
+    "trackingNumber": "$trackingNumber",
+    "metadata": {
+      "source": "CSV Import - Secondary",
+      "originalOrderId": "$orderId"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "endpoint": "https://api.example.com/v1/orders",
+  "method": "POST",
+  "payloadTemplate": {
+    "customer": {
+      "id": "$customerId",
+      "name": "$customerName",
+      "email": "$email"
+    },
+    "items": [
+      {
+        "productId": "$productId",
+        "quantity": "$quantity"
+      }
+    ],
+    "metadata": {
+      "source": "CSV Import - Primary"
+    }
+  },
+  "extractFromResponse": {
+    "field": "orderId",
+    "jsonPath": "id"
+  }
+}
