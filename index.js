@@ -82,6 +82,20 @@ function replacePlaceholders(template, rowData, extractedData = {}) {
         if (obj[key].startsWith('$')) {
           const placeholderName = obj[key].substring(1); // Name without $
 
+          // Handle nested paths in extracted data
+          if (placeholderName.includes('.')) {
+            const pathParts = placeholderName.split('.');
+            let value = extractedData;
+            for (const part of pathParts) {
+              if (value === undefined || value === null) break;
+              value = value[part];
+            }
+            if (value !== undefined && value !== null) {
+              obj[key] = value;
+              continue;
+            }
+          }
+
           // Prioritize extracted data, then CSV data
           if (extractedData[placeholderName] !== undefined) {
             obj[key] = extractedData[placeholderName];
@@ -118,10 +132,6 @@ function replacePlaceholders(template, rowData, extractedData = {}) {
                 obj[key] = value;
               }
             }
-          } else {
-            // Placeholder not found in extracted data or CSV row
-            // console.warn(`[Row ${rowData.rowNumber || 'unknown'}] Placeholder '${placeholderName}' not found in CSV row or extracted data.`);
-            // obj[key] = null; // Or keep the placeholder string: obj[key] = obj[key];
           }
         }
       }
@@ -370,25 +380,26 @@ async function processCSV() {
                     const pathParts = jsonPath.split('.');
                     for (const part of pathParts) {
                         if (valueToExtract === undefined || valueToExtract === null) {
-                            valueToExtract = undefined; // Stop traversal if path is invalid
+                            console.warn(`[Row ${row.rowNumber}] Path part "${part}" not found in response data`);
+                            valueToExtract = null;
                             break;
                         }
                         valueToExtract = valueToExtract[part];
                     }
 
-                    if (valueToExtract !== undefined) {
+                    if (valueToExtract !== undefined && valueToExtract !== null) {
                         extractedDataForRow[field] = valueToExtract;
                         console.log(`Extracted "${field}": ${JSON.stringify(valueToExtract)}`);
                     } else {
-                        console.warn(`Could not extract "${field}" using path "${jsonPath}". Value not found or path invalid.`);
-                        extractedDataForRow[field] = null; // Store null if not found
+                        console.warn(`[Row ${row.rowNumber}] Could not extract "${field}" using path "${jsonPath}". Value not found or path invalid.`);
+                        extractedDataForRow[field] = null;
                     }
                   } catch (extractError) {
-                    console.error(`Error extracting data for field "${field}" using path "${jsonPath}": ${extractError.message}`);
-                    extractedDataForRow[field] = null; // Store null on error
+                    console.error(`[Row ${row.rowNumber}] Error extracting data for field "${field}" using path "${jsonPath}": ${extractError.message}`);
+                    extractedDataForRow[field] = null;
                   }
                 } else {
-                  console.warn(`Incomplete "extractFromResponse" configuration for ${requestName}: Missing "field" or "jsonPath".`);
+                  console.warn(`[Row ${row.rowNumber}] Incomplete "extractFromResponse" configuration for ${requestName}: Missing "field" or "jsonPath".`);
                 }
               }
             } // End loop through requests for this row
