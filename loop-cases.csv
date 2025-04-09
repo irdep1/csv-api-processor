@@ -1,0 +1,6 @@
+contactName,contactEmail,contactRole,department,approvalLevel
+John Smith,john@example.com,Admin,IT,1
+Sarah Johnson,sarah@example.com,Manager,Finance,2
+Mike Brown,mike@example.com,Director,Operations,3
+Lisa Davis,lisa@example.com,VP,Engineering,4
+David Wilson,david@example.com,CTO,Technology,5 

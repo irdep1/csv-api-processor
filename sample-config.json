@@ -1,0 +1,110 @@
+{
+  "requests": [
+    {
+      "name": "create_account",
+      "endpoint": "https://httpbin.org/post",
+      "method": "POST",
+      "payloadTemplate": {
+        "name": "$accountName",
+        "description": "$description",
+        "region": "$region"
+      },
+      "extractFromResponse": [
+        {
+          "field": "accountId",
+          "jsonPath": "id"
+        },
+        {
+          "field": "legalEntityId",
+          "jsonPath": "legalEntityId"
+        }
+      ]
+    },
+    {
+      "name": "create_product",
+      "endpoint": "https://httpbin.org/post",
+      "method": "POST",
+      "condition": {
+        "type": "comparison",
+        "left": "$price",
+        "operator": ">",
+        "right": 20
+      },
+      "payloadTemplate": {
+        "accountId": "$accountId",
+        "name": "$accountName",
+        "type": "$productType",
+        "subscriptionType": "$subscriptionType",
+        "price": "$price",
+        "quantity": "$quantity"
+      },
+      "extractFromResponse": [
+        {
+          "field": "productId",
+          "jsonPath": "id"
+        },
+        {
+          "field": "totalAmount",
+          "jsonPath": "amount"
+        }
+      ]
+    },
+    {
+      "name": "create_contract",
+      "endpoint": "https://httpbin.org/post",
+      "method": "POST",
+      "condition": {
+        "type": "comparison",
+        "left": "$totalAmount",
+        "operator": ">=",
+        "right": "$discountThreshold"
+      },
+      "payloadTemplate": {
+        "accountId": "$accountId",
+        "productId": "$productId",
+        "length": "$contractLength",
+        "autoRenew": "$autoRenew"
+      },
+      "extractFromResponse": {
+        "field": "contractId",
+        "jsonPath": "id"
+      }
+    },
+    {
+      "name": "create_contacts",
+      "endpoint": "https://httpbin.org/post",
+      "method": "POST",
+      "loopOver": "loop-csv",
+      "condition": {
+        "type": "comparison",
+        "left": "$approvalLevel",
+        "operator": ">=",
+        "right": 2
+      },
+      "payloadTemplate": {
+        "accountId": "$accountId",
+        "name": "$contactName",
+        "email": "$contactEmail",
+        "role": "$contactRole",
+        "department": "$department",
+        "approvalLevel": "$approvalLevel"
+      }
+    },
+    {
+      "name": "create_approval_workflow",
+        "endpoint": "https://httpbin.org/post",
+      "method": "POST",
+      "condition": {
+        "type": "comparison",
+        "left": "$totalAmount",
+        "operator": ">",
+        "right": 1000
+      },
+      "payloadTemplate": {
+        "accountId": "$accountId",
+        "contractId": "$contractId",
+        "amount": "$totalAmount"
+      }
+    }
+  ]
+} 

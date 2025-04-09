@@ -7,63 +7,62 @@ const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const readline = require('readline'); // Import readline for interactive mode
 
+// Add error logging setup
+const ERROR_LOG_FILE = 'error_log.csv';
+const errorLogStream = fs.createWriteStream(ERROR_LOG_FILE, { flags: 'a' });
+if (!fs.existsSync(ERROR_LOG_FILE)) {
+  errorLogStream.write('timestamp,rowNumber,requestName,statusCode,errorMessage\n');
+}
+
+function logError(rowNumber, requestName, statusCode, errorMessage) {
+  const timestamp = new Date().toISOString();
+  errorLogStream.write(`${timestamp},${rowNumber},${requestName},${statusCode},"${errorMessage.replace(/"/g, '""')}"\n`);
+}
+
 // Command line arguments
 const argv = yargs(hideBin(process.argv))
   .option('csv', {
     alias: 'c',
-    description: 'Path to the CSV file',
+    description: 'Path to the primary CSV file',
     type: 'string',
-    demandOption: true // Always required
+    demandOption: true
+  })
+  .option('loop-csv', {
+    alias: 'l',
+    description: 'Path to the secondary CSV file for looping',
+    type: 'string'
   })
   .option('config', {
     alias: 'f',
-    description: 'Path to the JSON configuration file. Supports single request (legacy) or multi-request sequence via "requests" array.',
-    type: 'string'
-    // demandOption removed, handled by .check()
+    description: 'Path to the JSON configuration file',
+    type: 'string',
+    demandOption: true
   })
   .option('apikey', {
     alias: 'k',
-    description: 'API key for authentication (required unless --generate-config is used)',
-    type: 'string'
-    // demandOption removed, handled by .check()
-  })
-  .option('endpoint', {
-    alias: 'e',
-    description: 'API endpoint URL template. Overrides endpoint(s) defined in the config file if provided.',
-    type: 'string'
-    // Requirement is now checked dynamically in processCSV
+    description: 'API key for authentication',
+    type: 'string',
+    demandOption: true
   })
   .option('delay', {
     alias: 'd',
-    description: 'Delay between processing each ROW in milliseconds', // Updated description
+    description: 'Delay between requests in milliseconds',
     type: 'number',
     default: 0
   })
-  .option('generate-config', { // <-- New flag
-    description: 'Generate a config file from CSV headers and exit',
+  .option('generate-config', {
+    description: 'Generate a basic config file from CSV headers',
     type: 'boolean',
     default: false
   })
-  .option('output-config', { // <-- Option for explicit output filename
-      description: 'Explicit filename for the generated config file (optional)',
-      type: 'string'
-      // Default is now derived from --csv if this is omitted
+  .option('output-config', {
+    description: 'Specify output file for generated config',
+    type: 'string'
   })
-  .option('interactive', { // <-- New flag for interactive mode
-      description: 'Run in interactive mode, prompting after each row',
-      type: 'boolean',
-      default: false
-  })
-  // Check for conditional requirements
-  .check((argv) => {
-      if (!argv.generateConfig) {
-          // If not generating config, the standard options are required
-          if (argv.config === undefined) throw new Error("Missing required argument: --config (-f)");
-          if (argv.apikey === undefined) throw new Error("Missing required argument: --apikey (-k)");
-          // Endpoint requirement is now checked within processCSV based on config content
-      }
-      // No need to check for --csv here as demandOption: true handles it
-      return true; // Indicate checks passed
+  .option('interactive', {
+    description: 'Run in interactive mode, prompting for each request',
+    type: 'boolean',
+    default: false
   })
   .help()
   .alias('help', 'h')
@@ -159,16 +158,19 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Create a single readline interface
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
 // Helper function for interactive prompt
 function askQuestion(query) {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
+  return new Promise(resolve => {
+    rl.question(query, ans => {
+      resolve(ans);
     });
-    return new Promise(resolve => rl.question(query, ans => {
-        rl.close();
-        resolve(ans);
-    }))
+  });
 }
 
 // --- Function to generate config --- (Remains largely the same, generates a basic single-request config)
@@ -250,212 +252,249 @@ async function generateConfig(csvPath, outputConfigPath) {
   });
 }
 
-// --- Process CSV function (Refactored for single config file with 'requests' array) ---
-async function processCSV() {
-  try {
-    // Load the single configuration file
-    const configPath = path.resolve(argv.config);
-    console.log(`Loading configuration from: ${configPath}`);
-    let configRaw;
-    try {
-        configRaw = fs.readFileSync(configPath, 'utf8');
-    } catch (readError) {
-        throw new Error(`Error reading configuration file: ${readError.message}`);
+function evaluateCondition(condition, extractedData) {
+  if (!condition) return true; // No condition means always run
+  
+  if (condition.type === 'comparison') {
+    let left = condition.left;
+    let right = condition.right;
+    
+    // Replace variables with their values
+    if (typeof left === 'string' && left.startsWith('$')) {
+      left = extractedData[left.substring(1)];
     }
-    const config = JSON.parse(configRaw);
-
-    // Determine if we are in multi-request mode or single-request (legacy) mode
-    const isMultiRequestMode = Array.isArray(config.requests) && config.requests.length > 0;
-
-    // Validate config structure
-    if (isMultiRequestMode) {
-        console.log("Multi-request mode detected.");
-        if (config.requests.some(req => !req.payloadTemplate || !req.endpoint)) {
-            throw new Error('Each request object in the "requests" array must contain at least "endpoint" and "payloadTemplate".');
-        }
-    } else if (config.payloadTemplate && config.endpoint) {
-        console.log("Single-request (legacy) mode detected.");
-    } else {
-        throw new Error('Configuration file must contain a valid "endpoint" and "payloadTemplate" (for single request mode) or a valid "requests" array (for multi-request mode).');
+    if (typeof right === 'string' && right.startsWith('$')) {
+      right = extractedData[right.substring(1)];
     }
-
-    // Setup API client
-    const apiClient = axios.create({
-      headers: { 'Content-Type': 'application/json', 'x-api-key': argv.apikey },
-      // timeout: 10000, // Optional
-    });
-
-    // Process CSV file
-    const results = [];
-    let processedRows = 0;
-    let successfulRows = 0; // Track rows where all requests succeeded
-    let failedRows = 0;     // Track rows where at least one request failed
-
-    console.log(`Starting to process CSV file: ${argv.csv}`);
-    console.log(`Delay between processing each ROW: ${argv.delay}ms`);
-
-    // Debugging: Log the value of argv.csv
-    console.log(`CSV file path: ${argv.csv}`);
-
-    let csvPath = "";
-    if (typeof argv === 'object' && argv !== null && argv.hasOwnProperty('csv')) {
-        let rawCsvPath = String(argv['csv']).trim(); // Convert to string and trim whitespace
-        csvPath = path.resolve(rawCsvPath.replace(/,+$/, '')); // Remove trailing commas and resolve the CSV path
-    } else {
-        throw new Error("Failed to parse CSV file path from command line arguments.");
+    
+    // Convert to numbers if possible
+    if (!isNaN(left)) left = Number(left);
+    if (!isNaN(right)) right = Number(right);
+    
+    console.log(`Evaluating condition: ${JSON.stringify(condition)}`);
+    console.log(`Left value: ${left}, Right value: ${right}`);
+    
+    switch (condition.operator) {
+      case '>': return left > right;
+      case '>=': return left >= right;
+      case '<': return left < right;
+      case '<=': return left <= right;
+      case '==': return left == right;
+      case '===': return left === right;
+      case '!=': return left != right;
+      case '!==': return left !== right;
+      default: return true;
     }
-    const csvStream = fs.createReadStream(csvPath)
-      .pipe(csv())
-      .on('data', (row) => { results.push(row); })
-      .on('end', async () => {
-        console.log(`CSV file successfully read. Found ${results.length} rows.`);
-        if (results.length === 0) { console.log("No data rows found."); return; }
-
-        // Process each row
-        for (const row of results) {
-          processedRows++;
-          let rowFailed = false;
-          let extractedDataForRow = {}; // Store extracted data for this row's sequence
-
-          console.log(`\n[Row ${processedRows}/${results.length}] Processing...`);
-          row.rowNumber = processedRows; // Add row number for logging context
-
-          // Determine the list of requests to process for this row
-          const requestsToProcess = isMultiRequestMode ? config.requests : [config]; // Use requests array or wrap single config
-
-          try {
-            // Iterate through the sequence of requests for the current row
-            for (let i = 0; i < requestsToProcess.length; i++) {
-              const currentRequestConfig = requestsToProcess[i];
-              const requestName = currentRequestConfig.name || `Request #${i + 1}`;
-
-              console.log(`--- ${requestName} ---`);
-
-              // Determine endpoint and method for this specific request
-              let endpointTemplate = argv.endpoint || currentRequestConfig.endpoint; // Command-line override takes precedence
-              const httpMethod = (currentRequestConfig.method && ['POST', 'PUT', 'GET', 'DELETE', 'PATCH'].includes(currentRequestConfig.method.toUpperCase()))
-                ? currentRequestConfig.method.toUpperCase()
-                : 'POST'; // Default to POST
-
-              if (!endpointTemplate || typeof endpointTemplate !== 'string' || endpointTemplate.trim() === '') {
-                  throw new Error(`Missing or invalid "endpoint" for ${requestName} in config. Please ensure it is a string.`);
-              }
-              if (argv.endpoint) { console.log(`Using endpoint from command line override: ${endpointTemplate}`); }
-              else { console.log(`Using endpoint from config: ${endpointTemplate}`); }
-
-              if (typeof endpointTemplate !== 'string') {
-                  throw new Error(`The endpoint for ${requestName} must be a string.`);
-              }
-              console.log(`Using HTTP method: ${httpMethod}`);
-
-              // Create the data context for placeholder replacement (CSV row + data extracted so far for this row)
-              const dataContext = { ...row, ...extractedDataForRow };
-
-              // Replace placeholders in endpoint and payload
-              const finalUrl = replaceUrlPlaceholders(endpointTemplate, dataContext);
-              const payload = replacePlaceholders(currentRequestConfig.payloadTemplate, row, extractedDataForRow); // Pass row and extracted separately for clarity in function
-
-              console.log(`Target URL: ${httpMethod} ${finalUrl}`);
-              if (httpMethod !== 'GET' && httpMethod !== 'DELETE') {
-                  console.log(`Sending payload: ${JSON.stringify(payload, null, 2)}`);
-              }
-
-              // Make the API request
-              const response = await apiClient.request({
-                method: httpMethod,
-                url: finalUrl,
-                data: (httpMethod !== 'GET' && httpMethod !== 'DELETE') ? payload : undefined, // Don't send body for GET/DELETE
-              });
-
-              console.log(`Response Status: ${response.status} ${response.statusText}`);
-              // if (response.data) { console.log(`Response data: ${JSON.stringify(response.data, null, 2)}`); } // Optional logging
-
-              // Extract data if configured for this request
-              if (currentRequestConfig.extractFromResponse) {
-                const { field, jsonPath } = currentRequestConfig.extractFromResponse;
-                if (field && jsonPath) {
-                  try {
-                    // Basic JSON path extraction (handles simple dot notation)
-                    let valueToExtract = response.data;
-                    const pathParts = jsonPath.split('.');
-                    for (const part of pathParts) {
-                        if (valueToExtract === undefined || valueToExtract === null) {
-                            console.warn(`[Row ${row.rowNumber}] Path part "${part}" not found in response data`);
-                            valueToExtract = null;
-                            break;
-                        }
-                        valueToExtract = valueToExtract[part];
-                    }
-
-                    if (valueToExtract !== undefined && valueToExtract !== null) {
-                        extractedDataForRow[field] = valueToExtract;
-                        console.log(`Extracted "${field}": ${JSON.stringify(valueToExtract)}`);
-                    } else {
-                        console.warn(`[Row ${row.rowNumber}] Could not extract "${field}" using path "${jsonPath}". Value not found or path invalid.`);
-                        extractedDataForRow[field] = null;
-                    }
-                  } catch (extractError) {
-                    console.error(`[Row ${row.rowNumber}] Error extracting data for field "${field}" using path "${jsonPath}": ${extractError.message}`);
-                    extractedDataForRow[field] = null;
-                  }
-                } else {
-                  console.warn(`[Row ${row.rowNumber}] Incomplete "extractFromResponse" configuration for ${requestName}: Missing "field" or "jsonPath".`);
-                }
-              }
-            } // End loop through requests for this row
-
-            // If loop completed without error for this row
-            successfulRows++;
-
-          } catch (error) {
-            rowFailed = true;
-            failedRows++;
-            console.error(`Error processing row ${processedRows} during ${error.requestName || 'a request'}:`, error.message); // Add request name if possible
-            if (error.response) {
-              console.error(`API Error Status: ${error.response.status}`);
-              console.error(`API Error Response:`, JSON.stringify(error.response.data, null, 2));
-            } else if (error.request) {
-              console.error('API Error: No response received from server.');
-            } else {
-              console.error('API Error: Request setup failed or other error.', error.message);
-            }
-            // Stop processing further requests for this row on error
-            // (Currently continues to next row)
-          }
-
-          // Wait for specified delay before processing the next row
-          if (argv.delay > 0 && processedRows < results.length) {
-            console.log(`Waiting ${argv.delay}ms before next row...`);
-            await sleep(argv.delay);
-          }
-
-          // Interactive Mode Check
-          if (argv.interactive && processedRows < results.length) {
-            const answer = await askQuestion(`\nProcessed row ${processedRows}/${results.length}. ${rowFailed ? 'An error occurred.' : ''} Continue? (y/n): `);
-            if (answer.toLowerCase() === 'n') {
-              console.log("Stopping interactive processing.");
-              break; // Exit the main row loop
-            }
-          }
-        } // End loop through rows
-
-        console.log('\n--- Processing Summary ---');
-        console.log(`Total rows processed: ${processedRows}`);
-        console.log(`Rows fully successful: ${successfulRows}`);
-        console.log(`Rows with failures: ${failedRows}`);
-        console.log('--------------------------');
-      })
-      .on('error', (error) => {
-        console.error(`Error reading or parsing CSV file: ${error.message}`);
-        if (!process.exitCode) process.exitCode = 1;
-      });
-
-  } catch (error) {
-    console.error('Fatal Error:', error.message);
-    process.exit(1);
   }
+  
+  return true; // Unknown condition type, run by default
 }
 
+// --- Process CSV function (Refactored for single config file with 'requests' array) ---
+async function processCSV() {
+  const csvPath = path.resolve(argv.csv);
+  const configPath = argv.config ? path.resolve(argv.config) : null;
+  const loopCsvPath = argv.loopCsv ? path.resolve(argv.loopCsv) : null;
+  
+  // Read config file
+  let config;
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    console.error('Error reading config file:', error);
+    process.exit(1);
+  }
+
+  // Read loop CSV if specified
+  let loopData = [];
+  if (loopCsvPath) {
+    try {
+      loopData = await new Promise((resolve, reject) => {
+        const data = [];
+        fs.createReadStream(loopCsvPath)
+          .pipe(csv())
+          .on('data', (row) => data.push(row))
+          .on('end', () => resolve(data))
+          .on('error', reject);
+      });
+    } catch (error) {
+      console.error('Error reading loop CSV file:', error);
+      process.exit(1);
+    }
+  }
+
+  // Process main CSV
+  const results = [];
+  let rowNumber = 0;
+
+  return new Promise((resolve, reject) => {
+    fs.createReadStream(csvPath)
+      .pipe(csv())
+      .on('data', async (row) => {
+        rowNumber++;
+        row.rowNumber = rowNumber;
+        console.log(`\nProcessing row ${rowNumber}:`, row);
+        
+        try {
+          let extractedData = {};
+          
+          // Process each request in sequence
+          for (const request of config.requests) {
+            // Check condition before processing request
+            const conditionResult = evaluateCondition(request.condition, extractedData);
+            console.log(`Condition result for ${request.name}: ${conditionResult}`);
+            
+            if (!conditionResult) {
+              console.log(`Skipping ${request.name} - condition not met`);
+              continue;
+            }
+
+            if (request.loopOver) {
+              console.log(`Processing loop request: ${request.name}`);
+              // Process loop CSV rows for this request
+              for (const loopRow of loopData) {
+                try {
+                  const payload = replacePlaceholders(request.payloadTemplate, loopRow, extractedData);
+                  const url = replaceUrlPlaceholders(request.endpoint, { ...loopRow, ...extractedData });
+
+                  console.log(`Sending request to ${url}`);
+                  console.log('Payload:', JSON.stringify(payload, null, 2));
+
+                  if (argv.interactive) {
+                    const proceed = await askQuestion(`Process ${request.name} for ${loopRow.contactName}? (y/n): `);
+                    if (proceed.toLowerCase() !== 'y') continue;
+                  }
+
+                  const response = await axios({
+                    method: request.method,
+                    url: url,
+                    data: payload,
+                    headers: {
+                      'Authorization': `Bearer ${argv.apikey}`,
+                      'Content-Type': 'application/json'
+                    }
+                  });
+
+                  console.log(`\nResponse from ${request.name}:`);
+                  console.log(`Status Code: ${response.status} ${response.statusText}`);
+                  console.log('Response Data:', JSON.stringify(response.data, null, 2));
+
+                  if (request.extractFromResponse) {
+                    if (Array.isArray(request.extractFromResponse)) {
+                      for (const extract of request.extractFromResponse) {
+                        const { field, jsonPath } = extract;
+                        const value = jsonPath.split('.').reduce((obj, key) => obj?.[key], response.data.json || response.data);
+                        extractedData[field] = value;
+                        console.log(`Extracted ${field}:`, value);
+                      }
+                    } else {
+                      const { field, jsonPath } = request.extractFromResponse;
+                      const value = jsonPath.split('.').reduce((obj, key) => obj?.[key], response.data.json || response.data);
+                      extractedData[field] = value;
+                      console.log(`Extracted ${field}:`, value);
+                    }
+                  }
+
+                  if (argv.delay > 0) {
+                    await sleep(argv.delay);
+                  }
+                } catch (error) {
+                  const statusCode = error.response?.status || 'N/A';
+                  const errorMessage = error.response?.data?.message || error.message;
+                  const errorResponse = error.response?.data || { message: error.message };
+                  
+                  console.error(`\nError in ${request.name}:`);
+                  console.error(`Status Code: ${statusCode}`);
+                  console.error('Error Response:', JSON.stringify(errorResponse, null, 2));
+                  
+                  logError(rowNumber, request.name, statusCode, JSON.stringify(errorResponse));
+                  throw error;
+                }
+              }
+            } else {
+              console.log(`Processing request: ${request.name}`);
+              try {
+                const payload = replacePlaceholders(request.payloadTemplate, row, extractedData);
+                const url = replaceUrlPlaceholders(request.endpoint, { ...row, ...extractedData });
+
+                console.log(`Sending request to ${url}`);
+                console.log('Payload:', JSON.stringify(payload, null, 2));
+
+                if (argv.interactive) {
+                  const proceed = await askQuestion(`Process ${request.name} for ${row.accountName}? (y/n): `);
+                  if (proceed.toLowerCase() !== 'y') continue;
+                }
+
+                const response = await axios({
+                  method: request.method,
+                  url: url,
+                  data: payload,
+                  headers: {
+                    'Authorization': `Bearer ${argv.apikey}`,
+                    'Content-Type': 'application/json'
+                  }
+                });
+
+                console.log(`\nResponse from ${request.name}:`);
+                console.log(`Status Code: ${response.status} ${response.statusText}`);
+                console.log('Response Data:', JSON.stringify(response.data, null, 2));
+
+                if (request.extractFromResponse) {
+                  if (Array.isArray(request.extractFromResponse)) {
+                    for (const extract of request.extractFromResponse) {
+                      const { field, jsonPath } = extract;
+                      const value = jsonPath.split('.').reduce((obj, key) => obj?.[key], response.data.json || response.data);
+                      extractedData[field] = value;
+                      console.log(`Extracted ${field}:`, value);
+                    }
+                  } else {
+                    const { field, jsonPath } = request.extractFromResponse;
+                    const value = jsonPath.split('.').reduce((obj, key) => obj?.[key], response.data.json || response.data);
+                    extractedData[field] = value;
+                    console.log(`Extracted ${field}:`, value);
+                  }
+                }
+
+                if (argv.delay > 0) {
+                  await sleep(argv.delay);
+                }
+              } catch (error) {
+                const statusCode = error.response?.status || 'N/A';
+                const errorMessage = error.response?.data?.message || error.message;
+                const errorResponse = error.response?.data || { message: error.message };
+                
+                console.error(`\nError in ${request.name}:`);
+                console.error(`Status Code: ${statusCode}`);
+                console.error('Error Response:', JSON.stringify(errorResponse, null, 2));
+                
+                logError(rowNumber, request.name, statusCode, JSON.stringify(errorResponse));
+                throw error;
+              }
+            }
+          }
+          
+          results.push({ rowNumber, success: true, extractedData });
+          console.log(`Completed row ${rowNumber} successfully`);
+        } catch (error) {
+          results.push({ rowNumber, success: false, error: error.message });
+          console.error(`Failed row ${rowNumber}:`, error.message);
+        }
+      })
+      .on('end', () => {
+        console.log('\nProcessing complete!');
+        console.log('Results:', JSON.stringify(results, null, 2));
+        errorLogStream.end();
+        rl.close();
+        resolve(results);
+      })
+      .on('error', (error) => {
+        console.error('Error reading CSV file:', error);
+        errorLogStream.end();
+        rl.close();
+        reject(error);
+      });
+  });
+}
 
 // --- Main execution logic ---
 async function main() {

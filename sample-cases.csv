@@ -1,0 +1,11 @@
+accountName,description,price,quantity,discountThreshold,region,productType,subscriptionType,contractLength,autoRenew
+Netflix,Streaming Service,99.99,1000,500,US,Subscription,Monthly,12,true
+Amazon,Cloud Services,499.99,500,1000,EU,Cloud,Annual,24,true
+Microsoft,Office Suite,29.99,2000,200,APAC,Software,Monthly,12,false
+Google,Workspace,49.99,1500,300,US,Cloud,Annual,36,true
+Apple,Music Service,9.99,5000,100,EU,Subscription,Monthly,12,true
+Salesforce,CRM Platform,199.99,300,400,US,Cloud,Annual,24,true
+Adobe,Creative Suite,79.99,800,200,APAC,Software,Monthly,12,false
+Spotify,Music Streaming,14.99,3000,150,EU,Subscription,Monthly,12,true
+Zoom,Video Conferencing,19.99,1000,250,US,Cloud,Annual,12,true
+Slack,Team Collaboration,12.99,2000,100,APAC,Cloud,Monthly,24,true 

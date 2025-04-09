@@ -1,2 +1,0 @@
-customerId,customerName,email,productId,quantity,price,totalAmount,orderDate,address,city,zipCode,country
-1001,John Doe,john@example.com,PRD-123,2,29.99,59.98,2025-04-01,"123 Main St",Anytown,12345,USA

@@ -1,165 +1,169 @@
 # CSV API Processor
 
-A Node.js utility for processing CSV data and sending it to an API endpoint using a configurable template.
+A powerful tool for processing CSV data through API endpoints with support for conditional requests, data extraction, and looping over secondary CSV files.
 
-## Description
+## Features
 
-This tool reads data from a CSV file, applies it to a JSON template defined in a configuration file, and sends the resulting payloads to a specified API endpoint. It supports both single API requests per CSV row and sequential multi-step API requests where data from one response can be used in subsequent requests for the same row. It's useful for data migration, API integration, and batch processing tasks.
+- Process CSV data through API endpoints
+- Support for multiple sequential requests per row
+- Conditional request execution based on data values
+- Extract data from responses for use in subsequent requests
+- Loop over secondary CSV files for nested data processing
+- Interactive mode for manual approval of each request
+- Comprehensive error logging
+- Configurable delays between requests
 
 ## Installation
 
 ```bash
-# Clone the repository (if applicable)
-git clone <repository-url>
-cd <project-directory>
-
-# Install dependencies
 npm install
 ```
 
 ## Usage
 
-Run the script with the following command-line arguments:
+### Basic Usage
 
 ```bash
-node index.js --csv <path-to-csv> --config <path-to-config> --apikey <your-api-key> [--endpoint <api-endpoint>] [--delay <ms>] [--interactive] [--generate-config] [--output-config <path>]
+node index.js --csv <csv-file> --config <config-file> --apikey <api-key>
 ```
 
-### Required Arguments
-
-- `--csv` or `-c`: Path to the CSV file containing the data to process
-- `--config` or `-f`: Path to the JSON configuration file. See "Configuration File" section below for format details (supports single or multi-request).
-- `--apikey` or `-k`: API key for authentication.
-
-### Optional Arguments
-
-- `--endpoint` or `-e`: API endpoint URL template. If provided, this *overrides* any `endpoint` defined within the configuration file(s). Useful for switching environments (e.g., staging vs. production) without editing the config.
-- `--delay` or `-d`: Delay in milliseconds between processing each *row* of the CSV file (default: 0). Note: This delay applies *after* all requests for a row are completed.
-- `--interactive` or `-i`: Run in interactive mode, prompting for confirmation (y/n) after processing each row.
-- `--generate-config`: Generate a basic configuration file based on the headers of the specified `--csv` file and exit. Use `--output-config` to specify the output filename (defaults to `mapping/<csv-basename>-config.json`).
-- `--output-config`: Specify the path for the generated config file when using `--generate-config`.
-- `--help` or `-h`: Show help information.
-
-### Example
+### Advanced Usage
 
 ```bash
-# Basic usage
-node index.js --csv source/sample-data.csv --config mapping/sample-multi-request-config.json --apikey YOUR_API_KEY --delay 500
-
-# Generate config from CSV
-node index.js --csv source/sample-data.csv --generate-config --output-config mapping/custom-config.json
-
-# Interactive mode
-node index.js --csv source/sample-data.csv --config mapping/config.json --apikey YOUR_API_KEY --interactive
+node index.js --csv <csv-file> --loop-csv <secondary-csv> --config <config-file> --apikey <api-key> [--interactive] [--delay <ms>]
 ```
 
-## Configuration File
+### Command Line Arguments
 
-The configuration file (`--config`) is a JSON file that defines how to process each row of the CSV. It supports two main formats: Single Request and Multi-Request Sequence.
+- `--csv, -c`: Path to the primary CSV file (required)
+- `--loop-csv, -l`: Path to the secondary CSV file for looping (optional)
+- `--config, -f`: Path to the JSON configuration file (required)
+- `--apikey, -k`: API key for authentication (required)
+- `--interactive`: Run in interactive mode, prompting for each request (optional)
+- `--delay, -d`: Delay between requests in milliseconds (optional, default: 0)
+- `--generate-config`: Generate a basic config file from CSV headers
+- `--output-config`: Specify output file for generated config
 
-### Single Request Format (Legacy)
+## Configuration
 
-For simple cases where only one API call is needed per CSV row, the configuration file has the following top-level structure:
-
-```json
-{
-  "endpoint": "YOUR_API_ENDPOINT_URL_TEMPLATE",
-  "method": "POST", // Optional: Defaults to POST. Supports GET, PUT, PATCH, DELETE.
-  "payloadTemplate": {
-    "field1": "$csvColumn1",
-    "nested": {
-      "field2": "$csvColumn2"
-    }
-    // ... structure matching your API request body ...
-  }
-}
-```
-
-- `endpoint`: The target API URL. Can include placeholders like `$csvColumnName` which will be replaced by CSV data (URL-encoded).
-- `method`: The HTTP method (e.g., "POST", "PUT", "GET").
-- `payloadTemplate`: The JSON structure for the request body. Use `$csvColumnName` placeholders for CSV data.
-
-### Multi-Request Sequence Format
-
-To perform multiple API calls sequentially for each CSV row (e.g., create a record, then update it using the ID from the first response), use the `requests` array format:
+The configuration file defines the sequence of API requests to be made for each row in the CSV file. Here's an example:
 
 ```json
 {
   "requests": [
     {
-      "name": "Request 1: Create Resource", // Optional name for logging
-      "endpoint": "https://api.example.com/v1/resources",
+      "name": "Create Account",
+      "endpoint": "https://api.example.com/accounts",
       "method": "POST",
       "payloadTemplate": {
-        "name": "$csvNameField",
-        "type": "$csvTypeField"
+        "name": "$accountName",
+        "description": "$description"
       },
       "extractFromResponse": {
-        "field": "resourceId",      // Name for the placeholder (e.g., $resourceId)
-        "jsonPath": "id"            // Path to value in response JSON (e.g., response.id)
-        // Use dot notation for nested paths, e.g., "data.attributes.uuid"
+        "field": "accountId",
+        "jsonPath": "id"
       }
     },
     {
-      "name": "Request 2: Update Resource", // Optional name
-      "endpoint": "https://api.example.com/v1/resources/$resourceId", // Uses extracted ID
-      "method": "PUT",
+      "name": "Create Product",
+      "endpoint": "https://api.example.com/products",
+      "method": "POST",
+      "condition": {
+        "type": "comparison",
+        "left": "$price",
+        "operator": ">",
+        "right": 20
+      },
       "payloadTemplate": {
-        "status": "processed",
-        "processedBy": "script",
-        "originalId": "$resourceId" // Can use extracted value in payload too
+        "name": "$productType",
+        "price": "$price",
+        "accountId": "$accountId"
+      },
+      "extractFromResponse": [
+        {
+          "field": "productId",
+          "jsonPath": "id"
+        },
+        {
+          "field": "totalAmount",
+          "jsonPath": "total"
+        }
+      ]
+    },
+    {
+      "name": "Create Contacts",
+      "endpoint": "https://api.example.com/contacts",
+      "method": "POST",
+      "loopOver": "loop-cases.csv",
+      "condition": {
+        "type": "comparison",
+        "left": "$approvalLevel",
+        "operator": ">=",
+        "right": 2
+      },
+      "payloadTemplate": {
+        "name": "$contactName",
+        "email": "$contactEmail",
+        "role": "$contactRole",
+        "accountId": "$accountId"
       }
     }
-    // Add more request objects here for longer sequences
   ]
 }
 ```
 
-- `requests`: An array where each object defines one request in the sequence.
-- **Each Request Object:**
-    - `name` (Optional): Descriptive name for logging.
-    - `endpoint`: URL template for this specific request. Can use `$csvColumn` and `$extractedField` placeholders.
-    - `method`: HTTP method for this request.
-    - `payloadTemplate`: Body template for this request. Can use `$csvColumn` and `$extractedField` placeholders.
-    - `extractFromResponse` (Optional): Defines how to extract data from *this* request's response to be used in *subsequent* requests within the *same row's sequence*.
-        - `field`: The name of the placeholder for the extracted value (e.g., `resourceId` becomes `$resourceId`).
-        - `jsonPath`: A simple dot-notation path to the desired value within the response JSON (e.g., `id`, `data.id`, `attributes.nested.value`).
+### Configuration Options
 
-**Placeholder Resolution:** When replacing placeholders (`$placeholderName`) in `endpoint` or `payloadTemplate`:
-1.  The script first checks if `placeholderName` exists in the data extracted from *previous* requests in the current row's sequence.
-2.  If not found there, it checks if `placeholderName` exists as a column header in the CSV row data.
-3.  If found in neither, the placeholder remains unchanged (a warning may be logged).
+- `name`: Descriptive name for the request
+- `endpoint`: API endpoint URL
+- `method`: HTTP method (GET, POST, PUT, DELETE)
+- `payloadTemplate`: Template for request payload with placeholders
+- `condition`: Optional condition for request execution
+- `extractFromResponse`: Fields to extract from response
+- `loopOver`: Secondary CSV file to loop over
 
-## CSV File Format
+### Placeholders
 
-The CSV file should contain columns that match the placeholders used in the configuration template(s). The column headers in the CSV file should match the placeholder names without the `$` prefix (e.g., a `$customerId` placeholder expects a `customerId` column in the CSV).
+- Use `$columnName` to reference CSV columns
+- Use `$extractedField` to reference data extracted from previous responses
 
-Example CSV file:
+### Conditions
 
+Conditions support comparison operators:
+- `>`: Greater than
+- `>=`: Greater than or equal
+- `<`: Less than
+- `<=`: Less than or equal
+- `==`: Equal to
+- `===`: Strictly equal to
+- `!=`: Not equal to
+- `!==`: Strictly not equal to
+
+## Sample Files
+
+### sample-cases.csv
 ```csv
-customerId,customerName,email,productId,quantity,price,totalAmount
-1001,John Doe,john@example.com,PRD-123,2,29.99,59.98
-1002,Jane Smith,jane@example.com,PRD-456,1,49.99,49.99
+accountName,description,price,quantity,discountThreshold,region,productType,subscriptionType,contractLength,autoRenew
+Acme Corp,Enterprise customer,1000,5,500,US,Enterprise,Annual,12,true
+Beta Inc,Startup customer,50,1,100,EU,Basic,Monthly,1,true
 ```
 
-## Data Type Conversion
-
-The script automatically converts values from the CSV to appropriate data types:
-- Empty strings or "null" are converted to `null`
-- "true" and "false" are converted to boolean values
-- Numeric strings are converted to numbers
-- Other values remain as strings
+### loop-cases.csv
+```csv
+contactName,contactEmail,contactRole,department,approvalLevel
+John Doe,john@example.com,Admin,IT,3
+Jane Smith,jane@example.com,Manager,Finance,2
+```
 
 ## Error Handling
 
-The script provides detailed error information for failed requests during processing, including:
-- Which row number failed.
-- Which request step (if using multi-request) failed.
-- HTTP status codes (if the error was an API response).
-- API response data (if available).
-- Other error messages (e.g., network errors, config errors).
-Processing continues to the next row by default even if an error occurs on the current row.
+Errors are logged to `error_log.csv` with the following information:
+- Timestamp
+- Row number
+- Request name
+- Status code
+- Error message
 
 ## License
 
-ISC
+MIT
