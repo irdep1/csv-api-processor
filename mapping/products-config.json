@@ -1,0 +1,14 @@
+{
+  "requests": [
+    {
+      "endpoint": "https://httpbin.org/post",
+      
+      "method": "POST",
+      "payloadTemplate": {
+        "productName": "$productName",
+        "price": "$price",
+        "description": "$description"
+      }
+    }
+  ]
+}
