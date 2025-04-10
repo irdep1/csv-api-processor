@@ -36,13 +36,17 @@ const argv = yargs(hideBin(process.argv))
     alias: 'f',
     description: 'Path to the JSON configuration file',
     type: 'string',
-    demandOption: true
+    demandOption: function() {
+      return !argv.generateConfig;
+    }
   })
   .option('apikey', {
     alias: 'k',
     description: 'API key for authentication',
     type: 'string',
-    demandOption: true
+    demandOption: function() {
+      return !argv.generateConfig;
+    }
   })
   .option('delay', {
     alias: 'd',
